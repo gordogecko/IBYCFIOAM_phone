@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#030712">
+    <title>"I Bet You Can't Find It On A Map!"</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- D3 & TopoJSON -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+
+    <!-- Game data & logic -->
+    <script src="capitals_data.js"></script>
+    <script src="water_bodies.js"></script>
+    <script src="game_logic.js"></script>
+    <script src="globe.js"></script>
+    <script src="celebration.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff', 400: '#22d3ee', 500: '#06b6d4',
+                            600: '#0891b2', 700: '#0e7490', 900: '#0f172a',
+                        }
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+        }
+        
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #030712;
+            color: #f1f5f9;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            overscroll-behavior: none;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+        
+        canvas { 
+            display: block; 
+            width: 100vw; 
+            height: 100vh; 
+            touch-action: none; 
+        }
+        
+        #globe-container { 
+            touch-action: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 55vh;
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        
+        .glass-button {
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            transition: all 0.15s ease;
+        }
+        
+        .glass-button:active {
+            transform: scale(0.97);
+            background: rgba(30, 41, 59, 0.95);
+        }
+
+        /* Answer button base - mobile optimized */
+        .answer-btn {
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            min-height: 52px;
+            padding: 14px 16px;
+            font-size: 15px;
+        }
+        
+        .answer-btn:active:not(:disabled) { 
+            transform: scale(0.97); 
+        }
+
+        /* Answer states */
+        .answer-correct {
+            background: rgba(16, 185, 129, 0.3) !important;
+            border-color: rgba(52, 211, 153, 0.9) !important;
+            color: #6ee7b7 !important;
+        }
+        .answer-wrong {
+            background: rgba(239, 68, 68, 0.3) !important;
+            border-color: rgba(248, 113, 113, 0.9) !important;
+            color: #fca5a5 !important;
+        }
+        .answer-dimmed { opacity: 0.35; }
+
+        /* Animations */
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes popIn {
+            0% { transform: scale(0.85); opacity: 0; }
+            60% { transform: scale(1.03); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-6px); }
+            75% { transform: translateX(6px); }
+        }
+        @keyframes pulseScore {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.25); color: #fbbf24; }
+            100% { transform: scale(1); }
+        }
+        @keyframes floatPts {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-50px); opacity: 0; }
+        }
+        .anim-slideUp { animation: slideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+        .anim-fadeIn { animation: fadeIn 0.25s ease forwards; }
+        .anim-popIn { animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+        .anim-shake { animation: shake 0.35s ease; }
+        .anim-pulseScore { animation: pulseScore 0.45s ease; }
+        .float-pts {
+            position: absolute;
+            font-weight: 800;
+            font-size: 1.25rem;
+            color: #fbbf24;
+            pointer-events: none;
+            animation: floatPts 1s ease forwards;
+        }
+
+        /* Badge */
+        .badge-main {
+            background: rgba(6, 182, 212, 0.25);
+            color: #67e8f9;
+            border: 1px solid rgba(6, 182, 212, 0.45);
+        }
+        .badge-bonus {
+            background: rgba(251, 191, 36, 0.25);
+            color: #fcd34d;
+            border: 1px solid rgba(251, 191, 36, 0.45);
+        }
+
+        /* Safe area insets for notched phones */
+        .safe-bottom {
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+        }
+        
+        .safe-top {
+            padding-top: max(12px, env(safe-area-inset-top));
+        }
+
+        @supports (height: 100dvh) {
+            html, body { height: 100dvh; }
+            canvas { height: 100dvh; }
+        }
+    </style>
+</head>
+<body class="relative h-screen w-screen overflow-hidden bg-gray-950 text-slate-100">
+
+    <!-- 3D Globe Container -->
+    <div id="globe-container" class="cursor-grab active:cursor-grabbing"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950/95 backdrop-blur-md transition-opacity duration-500">
+        <div class="w-10 h-10 border-4 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin mb-3"></div>
+        <p class="text-sm font-medium text-slate-300">Loading globe...</p>
+    </div>
+
+    <!-- ===================== GAME UI ===================== -->
+
+    <!-- Score Bar (top) - Compact for mobile -->
+    <div id="score-bar" class="absolute top-2 left-2 right-2 z-10 hidden safe-top">
+        <div class="glass-panel px-3 py-2 rounded-xl flex items-center justify-between shadow-xl">
+            <div class="flex items-center gap-1.5">
+                <i class="fa-solid fa-trophy text-amber-400 text-sm"></i>
+                <span id="score-value" class="font-bold text-white text-base tabular-nums">0</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <i class="fa-solid fa-flag text-cyan-400 text-sm"></i>
+                <span id="round-value" class="font-bold text-white text-sm tabular-nums">1</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <i class="fa-solid fa-fire text-orange-400 text-sm"></i>
+                <span id="streak-value" class="font-bold text-white text-sm tabular-nums">0</span>
+            </div>
+            <button id="btn-end-game" class="glass-button text-slate-300 px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
+                <i class="fa-solid fa-stop"></i>
+                <span>End</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Controls (top-right) -->
+    <div id="top-right-controls" class="absolute top-14 right-2 z-10 flex flex-col gap-1.5 hidden">
+        <button id="btn-toggle-sound" class="glass-button text-slate-300 w-9 h-9 rounded-lg text-sm flex items-center justify-center" title="Toggle Sound" aria-label="Toggle reward sounds" aria-pressed="true">
+            <i id="sound-icon" class="fa-solid fa-volume-high text-amber-300"></i>
+        </button>
+        <button id="btn-toggle-rotation" class="glass-button text-slate-300 w-9 h-9 rounded-lg text-sm flex items-center justify-center" title="Toggle Rotation">
+            <i id="rotation-icon" class="fa-solid fa-pause text-cyan-400"></i>
+        </button>
+    </div>
+
+    <!-- Game Panel (bottom) - Mobile optimized layout -->
+    <div id="game-panel" class="absolute bottom-0 left-0 right-0 z-20 hidden">
+        <div class="glass-panel p-4 rounded-t-2xl shadow-2xl relative safe-bottom">
+
+            <!-- Question header -->
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                    <span id="q-badge" class="badge-main text-xs font-bold px-2.5 py-1 rounded-full">MAIN</span>
+                    <span id="q-bonus-num" class="text-xs text-amber-300 font-semibold hidden"></span>
+                </div>
+                <div id="q-wiki-link" class="hidden">
+                    <a id="q-wiki-a" href="#" target="_blank" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Wiki
+                    </a>
+                </div>
+            </div>
+
+            <!-- Question text -->
+            <div class="flex items-start gap-2 mb-3">
+                <span id="q-flag" class="text-3xl shrink-0 leading-none"></span>
+                <div class="flex-1 min-w-0">
+                    <p id="question-text" class="text-base font-semibold text-white leading-snug"></p>
+                </div>
+            </div>
+
+            <!-- Answer buttons - Single column for mobile -->
+            <div id="answer-grid" class="grid grid-cols-1 gap-2.5"></div>
+
+            <!-- Result message -->
+            <div id="result-msg" class="mt-2.5 hidden">
+                <div class="flex items-center gap-2">
+                    <span id="result-icon" class="text-xl"></span>
+                    <p id="result-text" class="text-sm font-medium"></p>
+                </div>
+                <p id="correct-answer-text" class="text-xs text-slate-400 mt-0.5 hidden"></p>
+            </div>
+
+            <!-- Loading indicator for bonus fetch -->
+            <div id="bonus-loading" class="hidden flex flex-col items-center py-5 gap-2">
+                <div class="w-7 h-7 border-3 border-amber-500/30 border-t-amber-400 rounded-full animate-spin"></div>
+                <p class="text-xs text-amber-300 font-medium">Fetching trivia...</p>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ===================== INTRO SCREEN ===================== -->
+    <div id="intro-screen" class="fixed inset-0 z-40 flex items-center justify-center bg-gray-950/90 backdrop-blur-md">
+        <div class="glass-panel p-5 rounded-2xl max-w-sm w-full mx-3 shadow-2xl text-center anim-popIn">
+            <div class="text-5xl mb-3">🌍</div>
+            <h1 class="text-xl font-extrabold text-white mb-1 leading-tight">
+                "I Bet You Can't<br>Find It On A Map!"
+            </h1>
+            <p class="text-xs text-slate-400 mb-4 italic">A world capitals trivia game</p>
+
+            <div class="text-left bg-slate-900/70 rounded-xl p-3 mb-4 space-y-1.5 text-xs text-slate-300">
+                <p><span class="text-cyan-400 font-semibold">1.</span> Guess capitals from 4 choices.</p>
+                <p><span class="text-cyan-400 font-semibold">2.</span> Correct? <span class="text-amber-300 font-semibold">BONUS ROUND!</span> More trivia for extra points.</p>
+                <p><span class="text-cyan-400 font-semibold">3.</span> Keep streaking for escalating points!</p>
+                <p><span class="text-cyan-400 font-semibold">4.</span> One wrong ends the bonus round.</p>
+            </div>
+
+            <button id="btn-start" class="w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-slate-950 font-bold py-3.5 rounded-xl text-base transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-play"></i> Start Game
+            </button>
+            <p class="text-xs text-slate-500 mt-2">Requires internet for bonus trivia.</p>
+        </div>
+    </div>
+
+    <!-- ===================== GAME OVER SCREEN ===================== -->
+    <div id="gameover-screen" class="fixed inset-0 z-40 flex items-center justify-center bg-gray-950/90 backdrop-blur-md hidden">
+        <div class="glass-panel p-5 rounded-2xl max-w-sm w-full mx-3 shadow-2xl text-center anim-popIn">
+            <div class="text-4xl mb-2">🗺️</div>
+            <h2 class="text-xl font-bold text-white mb-1">Game Over!</h2>
+            <p class="text-xs text-slate-400 mb-3">Here's how you did:</p>
+
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <div class="bg-slate-900/70 rounded-xl p-2.5">
+                    <div class="text-xs text-slate-400 mb-0.5">Final Score</div>
+                    <div id="final-score" class="text-xl font-bold text-amber-400 tabular-nums">0</div>
+                </div>
+                <div class="bg-slate-900/70 rounded-xl p-2.5">
+                    <div class="text-xs text-slate-400 mb-0.5">Rounds</div>
+                    <div id="final-rounds" class="text-xl font-bold text-white tabular-nums">0</div>
+                </div>
+                <div class="bg-slate-900/70 rounded-xl p-2.5">
+                    <div class="text-xs text-slate-400 mb-0.5">Correct</div>
+                    <div id="final-correct" class="text-xl font-bold text-emerald-400 tabular-nums">0</div>
+                </div>
+                <div class="bg-slate-900/70 rounded-xl p-2.5">
+                    <div class="text-xs text-slate-400 mb-0.5">Best Bonus</div>
+                    <div id="final-bonus" class="text-xl font-bold text-cyan-400 tabular-nums">0</div>
+                </div>
+            </div>
+
+            <p id="final-taunt" class="text-xs text-slate-300 mb-4 italic"></p>
+
+            <button id="btn-play-again" class="w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-slate-950 font-bold py-3 rounded-xl text-base transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> Play Again
+            </button>
+        </div>
+    </div>
+
+    <!-- ===================== GAME CONTROLLER ===================== -->
+    <script>
+    (function () {
+        'use strict';
+
+        const GL = window.GameLogic;
+        const G  = window.Globe;
+        const FX = window.Celebration;
+
+        // ── DOM refs ────────────────────────────────────────────────
+        const $ = id => document.getElementById(id);
+        const loadingOverlay  = $('loading-overlay');
+        const scoreBar        = $('score-bar');
+        const scoreValue      = $('score-value');
+        const roundValue      = $('round-value');
+        const streakValue     = $('streak-value');
+        const btnEndGame      = $('btn-end-game');
+        const topRightControls = $('top-right-controls');
+        const btnToggleRotation = $('btn-toggle-rotation');
+        const rotationIcon    = $('rotation-icon');
+        const btnToggleSound  = $('btn-toggle-sound');
+        const soundIcon       = $('sound-icon');
+        const gamePanel       = $('game-panel');
+        const qBadge          = $('q-badge');
+        const qBonusNum       = $('q-bonus-num');
+        const qWikiLink       = $('q-wiki-link');
+        const qWikiA          = $('q-wiki-a');
+        const qFlag           = $('q-flag');
+        const questionText    = $('question-text');
+        const answerGrid      = $('answer-grid');
+        const resultMsg       = $('result-msg');
+        const resultIcon      = $('result-icon');
+        const resultText      = $('result-text');
+        const correctAnswerText = $('correct-answer-text');
+        const bonusLoading    = $('bonus-loading');
+        const introScreen     = $('intro-screen');
+        const btnStart        = $('btn-start');
+        const gameoverScreen  = $('gameover-screen');
+        const finalScore      = $('final-score');
+        const finalRounds     = $('final-rounds');
+        const finalCorrect    = $('final-correct');
+        const finalBonus      = $('final-bonus');
+        const finalTaunt      = $('final-taunt');
+        const btnPlayAgain    = $('btn-play-again');
+
+        // ── Game state ──────────────────────────────────────────────
+        let state = 'intro';
+        let score = 0;
+        let round = 1;
+        let streak = 0;
+        let bonusStreak = 0;
+        let bestBonusStreak = 0;
+        let totalCorrect = 0;
+        let totalAnswered = 0;
+        let recentCapitals = new Set();
+        let currentQuestion = null;
+        let currentCapital = null;
+        let bonusQuestions = [];
+        let bonusIndex = 0;
+        let answered = false;
+
+        // ── UI helpers ──────────────────────────────────────────────
+
+        function updateScoreBar() {
+            scoreValue.textContent = score;
+            roundValue.textContent = round;
+            streakValue.textContent = streak;
+        }
+
+        function pulseScore() {
+            scoreValue.classList.remove('anim-pulseScore');
+            void scoreValue.offsetWidth;
+            scoreValue.classList.add('anim-pulseScore');
+        }
+
+        function floatPoints(pts, x, y) {
+            const el = document.createElement('div');
+            el.className = 'float-pts';
+            el.textContent = '+' + pts;
+            el.style.left = x + 'px';
+            el.style.top  = y + 'px';
+            gamePanel.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        }
+
+        function showResult(correct, msg, correctAns, pts) {
+            resultMsg.classList.remove('hidden');
+            resultMsg.classList.add('anim-fadeIn');
+            if (correct) {
+                resultIcon.textContent = '✅';
+                resultText.textContent = msg;
+                resultText.className = 'text-sm font-medium text-emerald-400';
+                correctAnswerText.classList.add('hidden');
+                if (pts) {
+                    const rect = gamePanel.getBoundingClientRect();
+                    floatPoints(pts, rect.width / 2 - 12, 8);
+                }
+            } else {
+                resultIcon.textContent = '❌';
+                resultText.textContent = msg;
+                resultText.className = 'text-sm font-medium text-red-400';
+                if (correctAns) {
+                    correctAnswerText.textContent = 'Correct: ' + correctAns;
+                    correctAnswerText.classList.remove('hidden');
+                }
+            }
+        }
+
+        function hideResult() {
+            resultMsg.classList.add('hidden');
+            resultMsg.classList.remove('anim-fadeIn');
+        }
+
+        function renderQuestion(q, mode, bonusNum) {
+            answered = false;
+            FX.cancel();
+            hideResult();
+
+            // Badge
+            if (mode === 'main') {
+                qBadge.textContent = 'MAIN';
+                qBadge.className = 'badge-main text-xs font-bold px-2.5 py-1 rounded-full';
+                qBonusNum.classList.add('hidden');
+                qWikiLink.classList.add('hidden');
+            } else {
+                qBadge.textContent = 'BONUS';
+                qBadge.className = 'badge-bonus text-xs font-bold px-2.5 py-1 rounded-full';
+                qBonusNum.textContent = '#' + bonusNum + ' (+' + GL.bonusPointsForStreak(bonusStreak) + ')';
+                qBonusNum.classList.remove('hidden');
+                if (currentCapital) {
+                    qWikiA.href = 'https://en.wikipedia.org/wiki/' +
+                        encodeURIComponent(currentCapital.capital.replace(/ /g, '_'));
+                    qWikiLink.classList.remove('hidden');
+                }
+            }
+
+            // Flag
+            if (mode === 'main' && q.flag) {
+                qFlag.textContent = q.flag;
+                qFlag.classList.remove('hidden');
+            } else {
+                qFlag.classList.add('hidden');
+            }
+
+            // Question text
+            questionText.textContent = q.question;
+
+            // Answer buttons
+            answerGrid.innerHTML = '';
+            q.options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = 'answer-btn glass-button text-slate-200 font-semibold rounded-xl text-left flex items-center gap-3';
+                btn.innerHTML = '<span class="text-cyan-400 font-bold text-sm">' +
+                    String.fromCharCode(65 + q.options.indexOf(opt)) +
+                    '</span><span class="flex-1">' + opt + '</span>';
+                btn.addEventListener('click', () => handleAnswer(opt, btn));
+                btn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    handleAnswer(opt, btn);
+                }, { passive: false });
+                answerGrid.appendChild(btn);
+            });
+
+            // Slide-in animation
+            gamePanel.classList.remove('hidden');
+            gamePanel.querySelector('.glass-panel').classList.remove('anim-slideUp');
+            void gamePanel.offsetWidth;
+            gamePanel.querySelector('.glass-panel').classList.add('anim-slideUp');
+        }
+
+        function lockAnswers() {
+            answerGrid.querySelectorAll('.answer-btn').forEach(b => b.disabled = true);
+        }
+
+        function revealAnswers(selected) {
+            const btns = answerGrid.querySelectorAll('.answer-btn');
+            btns.forEach(b => {
+                const text = b.querySelector('span:last-child').textContent;
+                if (text === currentQuestion.correctAnswer && text === selected) {
+                    b.classList.add('answer-correct');
+                } else if (text === selected) {
+                    b.classList.add('answer-wrong');
+                    b.classList.add('anim-shake');
+                } else if (text === currentQuestion.correctAnswer) {
+                    b.classList.add('answer-correct');
+                } else {
+                    b.classList.add('answer-dimmed');
+                }
+            });
+        }
+
+        // ── Game flow ───────────────────────────────────────────────
+
+        function startGame() {
+            state = 'main';
+            score = 0; round = 1; streak = 0; bonusStreak = 0;
+            bestBonusStreak = 0; totalCorrect = 0; totalAnswered = 0;
+            recentCapitals = new Set();
+
+            introScreen.classList.add('hidden');
+            gameoverScreen.classList.add('hidden');
+            scoreBar.classList.remove('hidden');
+            btnEndGame.classList.remove('hidden');
+            topRightControls.classList.remove('hidden');
+            bonusLoading.classList.add('hidden');
+
+            updateRotationIcon();
+
+            G.clearHighlight();
+            G.cancelMotion();
+            G.setAutoRotate(true);
+            updateScoreBar();
+            nextMainQuestion();
+        }
+
+        function nextMainQuestion() {
+            state = 'main';
+            round++;
+            updateScoreBar();
+
+            let capital = GL.pickRandomCapital(recentCapitals);
+            if (!capital) {
+                recentCapitals.clear();
+                capital = GL.pickRandomCapital(null);
+            }
+            recentCapitals.add(capital.capital + '|' + capital.country);
+            if (recentCapitals.size > 25) {
+                const first = recentCapitals.values().next().value;
+                recentCapitals.delete(first);
+            }
+
+            currentCapital = capital;
+            currentQuestion = GL.generateMainQuestion(capital, GL.WORLD_CAPITALS);
+            window.__currentCorrectAnswer = currentQuestion.correctAnswer;
+
+            G.spinTo(capital, function () { updateRotationIcon(); });
+            G.previewCapital(capital);
+
+            renderQuestion(currentQuestion, 'main');
+        }
+
+        function handleAnswer(selected, btn) {
+            if (answered) return;
+            answered = true;
+            lockAnswers();
+
+            const correct = (selected === currentQuestion.correctAnswer);
+            revealAnswers(selected);
+            totalAnswered++;
+
+            if (state === 'main') {
+                handleMainAnswer(correct);
+            } else if (state === 'bonus') {
+                handleBonusAnswer(correct);
+            }
+        }
+
+        function handleMainAnswer(correct) {
+            if (correct) {
+                score += GL.MAIN_POINTS;
+                streak++;
+                totalCorrect++;
+                pulseScore();
+                updateScoreBar();
+                showResult(true, GL.randomFrom(GL.CORRECT_MAIN), null, GL.MAIN_POINTS);
+                G.highlightCapital(currentCapital);
+                G.pulseCapital(currentCapital, 0x10b981);
+                const correctBtn = answerGrid.querySelector('.answer-correct');
+                FX.celebrate({
+                    originElement: correctBtn || gamePanel,
+                    points: GL.MAIN_POINTS,
+                    streak: streak,
+                    bonus: false
+                });
+                setTimeout(() => startBonusRound(), 2000);
+            } else {
+                streak = 0;
+                updateScoreBar();
+                showResult(false, GL.randomFrom(GL.WRONG_MAIN), currentQuestion.correctAnswer);
+                G.highlightCapital(currentCapital);
+                G.pulseCapital(currentCapital, 0xef4444);
+                setTimeout(() => {
+                    G.clearHighlight();
+                    nextMainQuestion();
+                }, 2800);
+            }
+        }
+
+        async function startBonusRound() {
+            state = 'bonus';
+            bonusStreak = 0;
+            bonusIndex = 0;
+
+            gamePanel.querySelector('.glass-panel').style.opacity = '0.6';
+            bonusLoading.classList.remove('hidden');
+            bonusLoading.classList.add('flex');
+            answerGrid.innerHTML = '';
+            questionText.textContent = '';
+            qFlag.classList.add('hidden');
+            hideResult();
+
+            const wikiPromises = [
+                GL.fetchWikiSummary(currentCapital.capital)
+            ];
+            const otherPool = GL.WORLD_CAPITALS.filter(
+                c => c.capital !== currentCapital.capital
+            );
+            const others = GL.pickRandom(otherPool, 4);
+            others.forEach(c => wikiPromises.push(GL.fetchWikiSummary(c.capital)));
+
+            const results = await Promise.all(wikiPromises);
+            const wiki = results[0];
+            const otherWikis = results.slice(1).map((w, i) => {
+                if (!w) return null;
+                return Object.assign({}, w, { title: others[i].capital, _capital: others[i] });
+            });
+
+            bonusQuestions = GL.generateBonusQuestions(
+                currentCapital, wiki, otherWikis, GL.WORLD_CAPITALS
+            );
+
+            bonusLoading.classList.add('hidden');
+            bonusLoading.classList.remove('flex');
+            gamePanel.querySelector('.glass-panel').style.opacity = '1';
+
+            if (bonusQuestions.length === 0) {
+                showResult(true, 'No bonus questions — back to the globe!', null, 0);
+                setTimeout(() => {
+                    G.clearHighlight();
+                    nextMainQuestion();
+                }, 1800);
+            } else {
+                showNextBonusQuestion();
+            }
+        }
+
+        function showNextBonusQuestion() {
+            if (bonusIndex >= bonusQuestions.length) {
+                showResult(true, 'All bonus questions answered!', null, 0);
+                setTimeout(() => {
+                    G.clearHighlight();
+                    nextMainQuestion();
+                }, 2000);
+                return;
+            }
+            currentQuestion = bonusQuestions[bonusIndex];
+            window.__currentCorrectAnswer = currentQuestion.correctAnswer;
+            renderQuestion(currentQuestion, 'bonus', bonusStreak + 1);
+        }
+
+        function handleBonusAnswer(correct) {
+            if (correct) {
+                const pts = GL.bonusPointsForStreak(bonusStreak);
+                score += pts;
+                bonusStreak++;
+                totalCorrect++;
+                if (bonusStreak > bestBonusStreak) bestBonusStreak = bonusStreak;
+                pulseScore();
+                updateScoreBar();
+                showResult(true, GL.randomFrom(GL.CORRECT_BONUS), null, pts);
+                G.pulseCapital(currentCapital, 0x10b981);
+                const correctBtn = answerGrid.querySelector('.answer-correct');
+                FX.celebrate({
+                    originElement: correctBtn || gamePanel,
+                    points: pts,
+                    streak: bonusStreak,
+                    bonus: true
+                });
+                bonusIndex++;
+                setTimeout(() => showNextBonusQuestion(), 2000);
+            } else {
+                showResult(false, GL.randomFrom(GL.WRONG_BONUS), currentQuestion.correctAnswer);
+                G.pulseCapital(currentCapital, 0xef4444);
+                setTimeout(() => {
+                    G.clearHighlight();
+                    nextMainQuestion();
+                }, 2800);
+            }
+        }
+
+        function endGame() {
+            state = 'gameover';
+            G.cancelMotion();
+            FX.cancel();
+            gamePanel.classList.add('hidden');
+            scoreBar.classList.add('hidden');
+            btnEndGame.classList.add('hidden');
+            topRightControls.classList.add('hidden');
+            G.clearHighlight();
+
+            finalScore.textContent = score;
+            finalRounds.textContent = round - 1;
+            finalCorrect.textContent = totalCorrect;
+            finalBonus.textContent = bestBonusStreak;
+
+            const accuracy = totalAnswered > 0 ? totalCorrect / totalAnswered : 0;
+            let taunt;
+            if (score >= 200) taunt = 'Okay, fine. You can find them on a map.';
+            else if (score >= 100) taunt = 'Not bad! You might own a globe.';
+            else if (score >= 50) taunt = 'Decent. But there are 195+ countries...';
+            else if (score >= 20) taunt = 'Hmm. Have you tried Google Maps?';
+            else taunt = 'Yikes. I won the bet.';
+            finalTaunt.textContent = taunt;
+
+            gameoverScreen.classList.remove('hidden');
+        }
+
+        // ── Rotation toggle ──────────────────────────────────────────
+        function updateRotationIcon() {
+            if (G.getAutoRotate()) {
+                rotationIcon.className = 'fa-solid fa-pause text-cyan-400';
+            } else {
+                rotationIcon.className = 'fa-solid fa-play text-slate-400';
+            }
+        }
+
+        btnToggleRotation.addEventListener('click', function () {
+            G.setAutoRotate(!G.getAutoRotate());
+            updateRotationIcon();
+        });
+
+        // ── Sound toggle ──────────────────────────────────────────
+        btnToggleSound.addEventListener('click', function () {
+            const enabled = FX.toggleSound();
+            soundIcon.className = enabled
+                ? 'fa-solid fa-volume-high text-amber-300'
+                : 'fa-solid fa-volume-xmark text-slate-500';
+            btnToggleSound.setAttribute('aria-pressed', String(enabled));
+        });
+
+        // ── Event listeners ─────────────────────────────────────────
+        btnStart.addEventListener('click', startGame);
+        btnPlayAgain.addEventListener('click', startGame);
+        btnEndGame.addEventListener('click', endGame);
+
+        // Prevent zoom on double-tap
+        document.addEventListener('touchend', function(e) {
+            const now = Date.now();
+            if (now - (document.lastTouchEnd || 0) < 300) {
+                e.preventDefault();
+            }
+            document.lastTouchEnd = now;
+        }, { passive: false });
+
+        // ── Boot ────────────────────────────────────────────────────
+        G.init();
+        G.populateMarkers(GL.WORLD_CAPITALS);
+        G.onReady(() => {
+            loadingOverlay.classList.add('opacity-0');
+            setTimeout(() => loadingOverlay.style.display = 'none', 500);
+        });
+
+        // Safety: hide loading after 6s
+        setTimeout(() => {
+            if (loadingOverlay.style.display !== 'none') {
+                loadingOverlay.classList.add('opacity-0');
+                setTimeout(() => loadingOverlay.style.display = 'none', 500);
+            }
+        }, 6000);
+
+    })();
+    </script>
+</body>
+</html>
